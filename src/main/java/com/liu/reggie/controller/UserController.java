@@ -8,11 +8,13 @@ import com.liu.reggie.utils.MailUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import javax.mail.MessagingException;
 import javax.servlet.http.HttpSession;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @CrossOrigin
 @RestController
@@ -22,6 +24,9 @@ public class UserController {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private RedisTemplate redisTemplate;
 
     /**
      * 发送验证码
@@ -40,6 +45,9 @@ public class UserController {
             MailUtils.sendTestMail(phone, code);
             //验证码存session，方便后面拿出来比对
             httpSession.setAttribute(phone, code);
+
+            //将生成的验证码缓存到Redis中，并且设置有效期为5分钟
+            redisTemplate.opsForValue().set(phone,code,5, TimeUnit.MINUTES);
             return R.success("验证码发送成功");
         }
         return R.error("验证码发送失败");
@@ -62,7 +70,10 @@ public class UserController {
         String code = map.get("code").toString();
 
         //从Session中获取保存的验证码
-        Object codeInSession = httpSession.getAttribute(phone);
+        //Object codeInSession = httpSession.getAttribute(phone);
+
+        //从redis中获取缓存的验证码
+        Object codeInSession = redisTemplate.opsForValue().get(phone);
 
         //验证码比对（页面提交的验证码和Session中保存的验证码）
         if (codeInSession != null && codeInSession.equals(code)){
@@ -79,6 +90,8 @@ public class UserController {
                 userService.save(user);
             }
             httpSession.setAttribute("user",user.getId());
+            //如果用户登录成功，删除redis中的验证码
+            redisTemplate.delete(phone);
             return R.success(user);
         }
         return R.error("登陆失败");
