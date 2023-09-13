@@ -102,7 +102,7 @@ public class ShoppingCartController {
      * @return
      */
     @PostMapping("/sub")
-    public R<ShoppingCart> sub(ShoppingCart shoppingCart) {
+    public R<ShoppingCart> sub(@RequestBody ShoppingCart shoppingCart) {
         Long dishId = shoppingCart.getDishId();
         Long setmealId = shoppingCart.getSetmealId();
         LambdaQueryWrapper<ShoppingCart> wrapper = new LambdaQueryWrapper<>();
