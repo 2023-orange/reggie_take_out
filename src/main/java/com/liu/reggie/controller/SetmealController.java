@@ -46,8 +46,6 @@ public class SetmealController {
     @Autowired
     private DishService dishService;
 
-    @Autowired
-    private RedisTemplate redisTemplate;
 
 
     /**
