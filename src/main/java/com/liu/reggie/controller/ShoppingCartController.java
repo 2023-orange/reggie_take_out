@@ -97,4 +97,49 @@ public class ShoppingCartController {
         return R.success("清空购物车成功");
     }
 
+    /**
+     * 减号按钮
+     * @return
+     */
+    @PostMapping("/sub")
+    public R<ShoppingCart> sub(ShoppingCart shoppingCart) {
+        Long dishId = shoppingCart.getDishId();
+        Long setmealId = shoppingCart.getSetmealId();
+        LambdaQueryWrapper<ShoppingCart> wrapper = new LambdaQueryWrapper<>();
+        //只查询当前用户ID的购物车
+        wrapper.eq(ShoppingCart::getUserId, BaseContext.getCurrentId());
+        if (dishId != null) {
+            wrapper.eq(ShoppingCart::getDishId, dishId);
+            ShoppingCart dishCart = shoppingCartService.getOne(wrapper);
+            Integer dishNumber = dishCart.getNumber();
+            dishNumber -= 1;
+            shoppingCart.setNumber(dishNumber);
+            dishCart.setNumber(dishCart.getNumber() - 1);
+            //统计当前份数
+            Integer currentNum = dishCart.getNumber();
+            //然后判断
+            if (currentNum > 0) {
+                //大于0则更新
+                shoppingCartService.updateById(dishCart);
+            } else if (currentNum == 0) {
+                //小于0则删除
+                shoppingCartService.removeById(dishCart.getId());
+            }
+            return R.success(dishCart);
+        }
+        if (setmealId != null) {
+            wrapper.eq(ShoppingCart::getSetmealId, setmealId);
+            ShoppingCart setmealCart = shoppingCartService.getOne(wrapper);
+            setmealCart.setNumber(setmealCart.getNumber() - 1);
+            Integer currentNum = setmealCart.getNumber();
+            if (currentNum > 0) {
+                shoppingCartService.updateById(setmealCart);
+            } else if (currentNum == 0) {
+                shoppingCartService.removeById(setmealCart.getId());
+            }
+            return R.success(setmealCart);
+        }
+        return R.error("系统繁忙，请稍后重试");
+    }
 }
+
