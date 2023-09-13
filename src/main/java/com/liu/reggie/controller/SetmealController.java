@@ -59,9 +59,6 @@ public class SetmealController {
     public R<String> save(@RequestBody SetmealDto setmealDto){
         setmealService.saveWithDish(setmealDto);
         log.info("套餐信息：{}",setmealDto);
-        //清理某个分类下面的套餐缓存
-        String key = "setmeal_" + setmealDto.getCategoryId() + "_" + setmealDto.getStatus();
-        redisTemplate.delete(key);
         return R.success("新增套餐成功");
     }
 
@@ -113,12 +110,8 @@ public class SetmealController {
      */
     @DeleteMapping
     public R<String> delete(@RequestParam List<Long> ids){
-        SetmealDto setmealDto = new SetmealDto();
         log.info("ids:{}",ids);
         setmealService.removeWithDish(ids);
-        //清理某个分类下面的套餐缓存
-        String key = "setmeal_" + setmealDto.getCategoryId() + "_" + setmealDto.getStatus();
-        redisTemplate.delete(key);
         return R.success("套餐删除成功！");
     }
 
@@ -146,22 +139,11 @@ public class SetmealController {
     @GetMapping("/list")
     public R<List<Setmeal>> list(Setmeal setmeal){
         log.info(setmeal.toString());
-        List<Setmeal> list = null;
-        //动态构造key
-        String key = "setmeal_" + setmeal.getCategoryId() + "_" + setmeal.getStatus();
-        //先从Redis中获取缓存数据
-        list = (List<Setmeal>) redisTemplate.opsForValue().get(key);
-        if (list != null){
-            //如果存在，则直接返回，无需查询数据库
-            return R.success(list);
-        }
         LambdaQueryWrapper<Setmeal> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(setmeal.getCategoryId() != null,Setmeal::getCategoryId,setmeal.getCategoryId());
         queryWrapper.eq(setmeal.getStatus() != null,Setmeal::getStatus,setmeal.getStatus());
         queryWrapper.orderByDesc(Setmeal::getUpdateTime);
-        list = setmealService.list(queryWrapper);
-        //如果不存在，需要查询数据库，将查询到的菜品信息缓存到Redis
-        redisTemplate.opsForValue().set(key,list,60, TimeUnit.MINUTES);
+        List<Setmeal> list =list = setmealService.list(queryWrapper);
         return R.success(list);
     }
 
