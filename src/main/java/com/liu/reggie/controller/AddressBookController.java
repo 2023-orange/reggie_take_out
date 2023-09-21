@@ -1,6 +1,5 @@
 package com.liu.reggie.controller;
 
-import com.alibaba.druid.sql.visitor.functions.If;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.liu.reggie.common.BaseContext;
@@ -10,7 +9,7 @@ import com.liu.reggie.entity.AddressBook;
 import com.liu.reggie.service.AddressBookService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.util.CollectionUtils;
+
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,9 +17,9 @@ import java.util.List;
 /**
  * 地址簿管理
  */
-@Slf4j
 @RestController
 @RequestMapping("/addressBook")
+@Slf4j
 public class AddressBookController {
 
     @Autowired

@@ -4,12 +4,44 @@ spring:
   #应用的名称，可选
   application:
     name: reggie_take_out
-  datasource:
-    druid:
-      driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://localhost:3306/reggie?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true
-      username: root
-      password: 1305174214
+  shardingsphere:
+    datasource:
+      names:
+        master,slave
+      #主数据源
+      master:
+        type: com.alibaba.druid.pool.DruidDataSource
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        url: jdbc:mysql://192.168.150.130:3306/reggie?characterEncoding=utf-8
+        username: root
+        password: root
+      #从数据源
+      slave:
+        type: com.alibaba.druid.pool.DruidDataSource
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        url: jdbc:mysql://192.168.150.131:3306/reggie?characterEncoding=utf-8
+        username: root
+        password: root
+    masterslave:
+      #读写分离配置
+      load-balance-algorithm-type: round_robin #轮询
+      #最终的数据源名称
+      name: dataSource
+      #主库数据源名称
+      master-data-source-name: master
+      #从库数据源列表，多个逗号分割
+      slave-data-source-names: slave
+    props:
+      sql:
+        show: true #开启sql显示
+  main:
+    allow-bean-definition-overriding: true
+  #  datasource:
+#    druid:
+#      driver-class-name: com.mysql.cj.jdbc.Driver
+#      url: jdbc:mysql://localhost:3306/reggie?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true
+#      username: root
+#      password: 1305174214
   redis:
     host: 127.0.0.1
     port: 6379
