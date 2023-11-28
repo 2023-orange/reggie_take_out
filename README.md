@@ -566,4 +566,142 @@ public class GlobalExceptionHandler {
     }
 }
 ```
+## 文件上传、下载
+我们的文件上传下载操作之前主要依靠Apache的两个组件：commons-fileupload 和 commons-io  
+
+现在我们的文件上传下载经过简化可以采用简单的方法来实现  
+
+首先我们给出文件上传代码：  
+```
+package com.itheima.reggie.controller;
+
+import com.qiuluo.reggie.common.Result;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.catalina.connector.CoyoteOutputStream;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import javax.servlet.ServletOutputStream;
+import javax.servlet.http.HttpServletResponse;
+import java.io.*;
+import java.util.UUID;
+
+/*
+我们通过MultipartFile获得文件，但这个文件是暂时性的，我们需要把他保存在服务器中
+*/
+
+@Slf4j
+@RestController
+@RequestMapping("/common")
+public class CommonController {
+
+    // 定义主路径（在yaml中配置一个自定义路径即可）
+    @Value("${reggie.path}")
+    private String BasePath;
+
+    /**
+     * 上传操作
+     * @param file 注意需要与前端传来的数据名一致
+     * @return
+     */
+    @PostMapping("/upload")
+    public Result<String> upload(MultipartFile file){
+        // 注意：file只是一个临时文件，当我们的request请求结束时，file也会消失，所以我们需要将它保存起来
+
+        // 这个方法可以获得文件的原名称，但不推荐设置为文件名保存（因为可能出现重复名称导致文件覆盖）
+        String originalFilename = file.getOriginalFilename();
+
+        // 将原始文件的后缀截取下来
+        String substring = originalFilename.substring(originalFilename.lastIndexOf("."));
+
+        // UUID生成随机名称，文件名设置为 UUID随机值+源文件后缀
+        String fileName = UUID.randomUUID().toString() + substring;
+
+        // 判断文件夹是否存在，若不存在需创建一个
+        File dir = new File(BasePath);
+
+        if (!dir.exists()){
+            dir.mkdirs();
+        }
+
+        // 这个方法可以转载文件到指定目录
+        try {
+            file.transferTo(new File(BasePath + fileName));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return Result.success(fileName);
+    }
+}
+```
+文件下载
+```
+package com.qiuluo.reggie.controller;
+
+import com.qiuluo.reggie.common.Result;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.catalina.connector.CoyoteOutputStream;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import javax.servlet.ServletOutputStream;
+import javax.servlet.http.HttpServletResponse;
+import java.io.*;
+import java.util.UUID;
+
+@Slf4j
+@RestController
+@RequestMapping("/common")
+public class CommonController {
+
+    @Value("${reggie.path}")
+    private String BasePath;
+
+    /**
+     * 文件下载
+     * @param name
+     * @param response
+     * @return
+     */
+    @GetMapping("/download")
+    public void download(String name, HttpServletResponse response){
+
+        try {
+            // 输入流获得数据
+            FileInputStream fileInputStream = new FileInputStream(new File(BasePath + name));
+
+            // 输出流写出数据
+            ServletOutputStream outputStream = response.getOutputStream();
+
+            // 设置文件类型(可设可不设)
+            response.setContentType("image/jpeg");
+
+            // 转载数据
+            int len = 0;
+            byte[] bytes = new byte[1024];
+            while ((len = fileInputStream.read(bytes)) != -1){
+                outputStream.write(bytes,0,len);
+                outputStream.flush();
+            }
+
+            // 关闭数据
+            fileInputStream.close();
+            outputStream.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+```
+## 简单功能开发
+我们的项目中大多都是简单功能(单表)，可以直接根据MyBatisPlus提供的基本方法完成，我们在这里介绍简单模板：  
+1.在项目中查看该方法的请求信息  
 
