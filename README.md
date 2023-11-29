@@ -1358,39 +1358,791 @@ public class UserController {
         </dependency>
 ```
 2.配置Redis相关信息  
+```
 server:
   port: 8080
   
-# redis设置在spring下
-```
+#redis设置在spring下
+server:
+  port: 8080
 spring:
+  #应用的名称，可选
   application:
-    name: qiuluo
+    name: reggie_take_out
   datasource:
     druid:
       driver-class-name: com.mysql.cj.jdbc.Driver
-      url: jdbc:mysql://localhost:3306/reggie
+      url: jdbc:mysql://localhost:3306/reggie?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true
       username: root
-      password: 123456
+      password: 1305174214
   redis:
-    host: localhost
+    host: 127.0.0.1
     port: 6379
-    password: 123456
     database: 0
-
+    password: 1305174214
+  cache:
+    redis:
+      time-to-live: 1800000 #设置过期时间，注意单位是毫秒
 mybatis-plus:
   configuration:
+    #在映射实体或者属性时，将数据库中表名和字段名中的下划线去掉，按照驼峰命名法映射
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     db-config:
       id-type: ASSIGN_ID
 reggie:
-  path: D:\img\
+  path: D:\Desktop\Reggie\
 ```
+3.配置序列化配置类
+```
+package com.liu.reggie.config;
+
+// 我们希望在Redis数据库中可以直接查看到key的原始名称，所以我们需要修改其序列化方法
+
+import org.springframework.cache.annotation.CachingConfigurerSupport;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
+
+@Configuration
+public class RedisConfig extends CachingConfigurerSupport {
+    @Bean
+    public RedisTemplate<Object,Object> redisTemplate(RedisConnectionFactory connectionFactory){
+        RedisTemplate<Object,Object> redisTemplate = new RedisTemplate<>();
+        //默认的key序列化器为：JdkSerializationRedisSerializer
+        redisTemplate.setKeySerializer(new StringRedisSerializer());
+        redisTemplate.setConnectionFactory(connectionFactory);
+        return redisTemplate;
+    }
+}
+```
+## Redis基本操作
+在完成上述环境搭建操作之后，我们就可以来实现RedisTemplate的自动装配，然后我们就可以采用RedisTemplate来实现Redis操作  
+```
+@Autowired
+private RedisTemplate redisTemplate;
+```
+我们项目中以Dish为例来完成了Redis的基本菜品缓存操作：
+```
+package com.liu.reggie.controller;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.liu.reggie.common.CustomException;
+import com.liu.reggie.common.R;
+import com.liu.reggie.dto.DishDto;
+import com.liu.reggie.entity.Category;
+import com.liu.reggie.entity.Dish;
+import com.liu.reggie.entity.DishFlavor;
+import com.liu.reggie.service.CategoryService;
+import com.liu.reggie.service.DishFlavorService;
+import com.liu.reggie.service.DishService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+/**
+ * 菜品管理
+ */
+@RestController
+@RequestMapping("/dish")
+@Slf4j
+public class DishController {
+    @Autowired
+    private DishService dishService;
+
+    @Autowired
+    private DishFlavorService dishFlavorService;
+
+    @Autowired
+    private CategoryService categoryService;
+
+    @Autowired
+    private RedisTemplate redisTemplate;
+
+    /**
+     * 根据条件查询对应的菜品数据
+     * @param dish
+     * @return
+     */
+//    @GetMapping("/list")
+//    public R<List<Dish>> list(Dish dish){
+//        //构造查询条件
+//        LambdaQueryWrapper<Dish> queryWrapper = new LambdaQueryWrapper<>();
+//        queryWrapper.eq(dish.getCategoryId() != null,Dish::getCategoryId,dish.getCategoryId());
+//        //添加条件，查询状态为1（起售状态）这些菜品
+//        queryWrapper.eq(Dish::getStatus,1);
+//        //添加排序条件
+//        queryWrapper.orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime);
+//
+//        List<Dish> list = dishService.list(queryWrapper);
+//
+//        return R.success(list);
+//    }
+
+    @GetMapping("/list")
+    public R<List<DishDto>> list(Dish dish){
+        List<DishDto> dishDtoList =null;
+        //动态构造key
+        String key = "dish_" + dish.getCategoryId() + "_" + dish.getStatus();//dish_id_1
+        //先从Redis中获取缓存数据
+        dishDtoList = (List<DishDto>) redisTemplate.opsForValue().get(key);
+
+        if (dishDtoList != null){
+            //如果存在，则直接返回，无需查询数据库
+            return R.success(dishDtoList);
+        }
+
+        //构造查询条件
+        LambdaQueryWrapper<Dish> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(dish.getCategoryId() != null,Dish::getCategoryId,dish.getCategoryId());
+        //添加条件，查询状态为1（起售状态）这些菜品
+        queryWrapper.eq(Dish::getStatus,1);
+        //添加排序条件
+        queryWrapper.orderByAsc(Dish::getSort).orderByDesc(Dish::getUpdateTime);
+
+        List<Dish> list = dishService.list(queryWrapper);
+
+        dishDtoList = list.stream().map((item)->{
+            DishDto dishDto = new DishDto();
+
+            BeanUtils.copyProperties(item,dishDto);
+            Long categoryId = item.getCategoryId();//分类ID
+            //根据ID查询分类对象
+            Category category = categoryService.getById(categoryId);
+            if (category != null){
+                String categoryName = category.getName();
+                dishDto.setCategoryName(categoryName);
+            }
+
+            //当前菜品Id
+            Long dishId = item.getId();
+            LambdaQueryWrapper<DishFlavor> lambdaQueryWrapper = new LambdaQueryWrapper<>();
+            lambdaQueryWrapper.eq(DishFlavor::getDishId,dishId);
+            //select * from dish_flavor where dish_id=?
+            List<DishFlavor> dishFlavorList = dishFlavorService.list(lambdaQueryWrapper);
+            dishDto.setFlavors(dishFlavorList);
+
+            return dishDto;
+        }).collect(Collectors.toList());
+        //如果不存在，需要查询数据库，将查询到的菜品信息缓存到Redis
+        redisTemplate.opsForValue().set(key,dishDtoList,60, TimeUnit.MINUTES);
+        return R.success(dishDtoList);
+    }
+
+}
+```
+同时为了保证前后台数据一致，我们在后台进行数据修改时，需要将缓存消除，使前台再次从MYSQL中读取数据：
+```
+package com.liu.reggie.controller;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.liu.reggie.common.CustomException;
+import com.liu.reggie.common.R;
+import com.liu.reggie.dto.DishDto;
+import com.liu.reggie.entity.Category;
+import com.liu.reggie.entity.Dish;
+import com.liu.reggie.entity.DishFlavor;
+import com.liu.reggie.service.CategoryService;
+import com.liu.reggie.service.DishFlavorService;
+import com.liu.reggie.service.DishService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+/**
+ * 菜品管理
+ */
+@RestController
+@RequestMapping("/dish")
+@Slf4j
+public class DishController {
+    @Autowired
+    private DishService dishService;
+
+    @Autowired
+    private DishFlavorService dishFlavorService;
+
+    @Autowired
+    private CategoryService categoryService;
+
+    @Autowired
+    private RedisTemplate redisTemplate;
+
+    /**
+     * 新增菜品
+     * @param dishDto
+     * @return
+     */
+    @PostMapping
+    public R<String> save(@RequestBody DishDto dishDto){
+        log.info(dishDto.toString());
+
+        dishService.saveWithFlavor(dishDto);
+
+        //清理某个分类下面的菜品缓存
+        String key = "dish_" + dishDto.getCategoryId() + "_1";
+        redisTemplate.delete(key);
+        return R.success("新增菜品成功");
+    }
+
+    /**
+     * 菜品信息分页查询
+     * @param page
+     * @param pageSize
+     * @param name
+     * @return
+     */
+    @GetMapping("/page")
+    public R<Page> page(int page,int pageSize,String name){
+
+        //构造分页构造器
+        Page<Dish> pageInfo = new Page<>(page,pageSize);
+        Page<DishDto> dishDtoPage = new Page<>();
+
+        //条件构造器
+        LambdaQueryWrapper<Dish> queryWrapper = new LambdaQueryWrapper<>();
+        //添加过滤条件
+        queryWrapper.like(name != null,Dish::getName,name);
+        //添加排序条件
+        queryWrapper.orderByDesc(Dish::getUpdateTime);
+
+        //执行分页查询
+        dishService.page(pageInfo,queryWrapper);
+
+        //对象拷贝
+        BeanUtils.copyProperties(pageInfo,dishDtoPage,"records");
+
+        List<Dish> records = pageInfo.getRecords();
+        List<DishDto> list = records.stream().map((item)->{
+            DishDto dishDto = new DishDto();
+
+            BeanUtils.copyProperties(item,dishDto);
 
 
+            Long categoryId = item.getCategoryId();//分类ID
+            //根据ID查询分类对象
+            Category category = categoryService.getById(categoryId);
+            if (category != null){
+                String categoryName = category.getName();
+                dishDto.setCategoryName(categoryName);
+            }
+
+            return dishDto;
+        }).collect(Collectors.toList());
+
+        dishDtoPage.setRecords(list);
+
+        return R.success(dishDtoPage);
+    }
+
+    /**
+     * 根据id查询菜品信息和口味信息
+     * @param id
+     * @return
+     */
+    @GetMapping("/{id}")
+    public R<DishDto> get(@PathVariable Long id){
+        DishDto dishDto = dishService.getByIdWithFlavor(id);
+
+        return R.success(dishDto);
+    }
+
+    /**
+     * 新增菜品
+     * @param dishDto
+     * @return
+     */
+    @PutMapping
+    public R<String> update(@RequestBody DishDto dishDto){
+        log.info(dishDto.toString());
+
+        dishService.updateWithFlavor(dishDto);
+
+        //清理某个分类下面的菜品缓存
+        String key = "dish_" + dishDto.getCategoryId() + "_1";
+        redisTemplate.delete(key);
+
+        return R.success("修改菜品成功");
+    }
+
+    /**
+     * 商品为启售状态，其status为1，但点击停售按钮时，发送的status为0，
+     * 前端是直接对这个status取反了，
+     * 我们直接用发送的这个status来更新我们的商品状态就好了，不用在后端再次进行判断
+     * @param status
+     * @param ids
+     * @return
+     */
+    @PostMapping("/status/{status}")
+    public R<String> updateStatus(@PathVariable Integer status,@RequestParam List<Long> ids){
+        log.info("status:{},ids:{}",status,ids);
+        //创建了一个用于更新 Dish 实体的条件包装器对象 updateWrapper。
+        LambdaUpdateWrapper<Dish> updateWrapper= new LambdaUpdateWrapper<>();
+        //构建了一个条件，该条件表示在 Dish 表中，如果 ids 列表不为 null，那么更新的操作将仅应用于那些在 ids 列表中的记录。
+        updateWrapper.in(ids != null,Dish::getId,ids);
+        //设置了需要更新的字段
+        updateWrapper.set(Dish::getStatus,status);
+        //执行更新操作
+        dishService.update(updateWrapper);
+        return R.success("批量操作成功");
+    }
+
+    @DeleteMapping
+    public R<String> deleteDish(@RequestParam List<Long> ids){
+        DishDto dishDto = new DishDto();
+        log.info("ids:{}",ids);
+        LambdaQueryWrapper<Dish> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.in(Dish::getId,ids);
+        queryWrapper.eq(Dish::getStatus,1);
+        int count = dishService.count(queryWrapper);
+        if (count > 0){
+            throw new CustomException("删除列表中存在启售状态商品，无法删除");
+        }
+        dishService.removeByIds(ids);
+        //清理某个分类下面的菜品缓存
+        String key = "dish_" + dishDto.getCategoryId() + "_1";
+        redisTemplate.delete(key);
+        return R.success("批量删除成功");
+    }
+}
+```
+### Redis高级操作
+Redis为我们提供了一种注解缓存的方法来简化操作，主要依赖于框架Spring Cache  
+Spring Cache提供了一层抽象，底层可以切换不同的Cache实现，我们主要使用RedisCacheManager这个接口来完成操作  
+我们来介绍Spring Cache用于缓存的常用的四个注解：  
+@EnableCaching	开启缓存注解功能  
+
+@Cacheable	在方法执行前先查看缓存中是否存有数据，如果有数据直接返回数据；如果没有，调用方法并将返回值存入缓存  
+
+@CachePut	将方法的返回值放到缓存  
+
+@CacheEvict	将一条或多条从缓存中删除  
+
+下面我们来介绍Spring Cache的具体实现步骤：
+1.导入相关依赖坐标
+```
+        <!--Cache坐标-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+```
+2.在配置文件中统一设置过期时间
+```
+server:
+  port: 8080
+spring:
+  #应用的名称，可选
+  application:
+    name: reggie_take_out
+  datasource:
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://localhost:3306/reggie?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true
+      username: root
+      password: 1305174214
+  redis:
+    host: 127.0.0.1
+    port: 6379
+    database: 0
+    password: 1305174214
+  cache:
+    redis:
+      time-to-live: 1800000 #设置过期时间，注意单位是毫秒
+mybatis-plus:
+  configuration:
+    #在映射实体或者属性时，将数据库中表名和字段名中的下划线去掉，按照驼峰命名法映射
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID
+reggie:
+  path: D:\Desktop\Reggie\
+```
+3.在启动类上添加@EnableCaching注解，开启缓存注解功能
+```
+package com.liu.reggie;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.web.servlet.ServletComponentScan;
+import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+@Slf4j
+@SpringBootApplication
+@ServletComponentScan
+@EnableTransactionManagement
+@EnableCaching  //开启springcache注解方式缓存功能
+public class ReggieApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(ReggieApplication.class,args);
+        log.info("项目启动成功...");
+    }
+}
+```
+4.在SetmealController的list方法上加上@Cacheable注解
+```
+package com.liu.reggie.controller;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.liu.reggie.common.R;
+import com.liu.reggie.dto.DishDto;
+import com.liu.reggie.dto.SetmealDto;
+import com.liu.reggie.entity.Category;
+import com.liu.reggie.entity.Dish;
+import com.liu.reggie.entity.Setmeal;
+import com.liu.reggie.entity.SetmealDish;
+import com.liu.reggie.service.CategoryService;
+import com.liu.reggie.service.DishService;
+import com.liu.reggie.service.SetmealDishService;
+import com.liu.reggie.service.SetmealService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.redis.core.ReactiveRedisOperations;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+/**
+ * 套餐管理
+ */
+
+@RestController
+@Slf4j
+@RequestMapping("/setmeal")
+public class SetmealController {
+
+    @Autowired
+    private SetmealService setmealService;
+
+    @Autowired
+    private SetmealDishService setmealDishService;
+
+    @Autowired
+    private CategoryService categoryService;
+
+    @Autowired
+    private DishService dishService;
+
+    /**
+     * 根据条件查询套餐数据
+     * @param setmeal
+     * @return
+     */
+    @GetMapping("/list")
+    @Cacheable(value = "setmealCache",key = "#setmeal.categoryId + '_' + #setmeal.status")
+    public R<List<Setmeal>> list(Setmeal setmeal){
+        log.info(setmeal.toString());
+        LambdaQueryWrapper<Setmeal> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(setmeal.getCategoryId() != null,Setmeal::getCategoryId,setmeal.getCategoryId());
+        queryWrapper.eq(setmeal.getStatus() != null,Setmeal::getStatus,setmeal.getStatus());
+        queryWrapper.orderByDesc(Setmeal::getUpdateTime);
+        List<Setmeal> list =list = setmealService.list(queryWrapper);
+        return R.success(list);
+    }
+
+    @GetMapping("/dish/{id}")
+    public R<List<DishDto>> showSetmealDish(@PathVariable Long id){
+        //条件构造器
+        LambdaQueryWrapper<SetmealDish> wrapper = new LambdaQueryWrapper<>();
+        //手里的数据只有setmealId
+        wrapper.eq(SetmealDish::getSetmealId,id);
+        //查询数据
+        List<SetmealDish> setmealDishList = setmealDishService.list(wrapper);
+        List<DishDto> dtoList = setmealDishList.stream().map((item) -> {
+            DishDto dishDto = new DishDto();
+            //copy数据
+            BeanUtils.copyProperties(item,dishDto);
+            //查询对应菜品id
+            Long dishId = item.getDishId();
+            //根据菜品id获取具体菜品数据，这里要自动装配 dishService
+            Dish dish = dishService.getById(dishId);
+            //其实主要数据是要那个图片，不过我们这里多copy一点也没事
+            BeanUtils.copyProperties(dish,dishDto);
+            return dishDto;
+        }).collect(Collectors.toList());
+        return R.success(dtoList);
+    }
+
+}
+```
+5.在SetmealController的save，update，delete方法上加上@CacheEvict注解
+```
+package com.liu.reggie.controller;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.liu.reggie.common.R;
+import com.liu.reggie.dto.DishDto;
+import com.liu.reggie.dto.SetmealDto;
+import com.liu.reggie.entity.Category;
+import com.liu.reggie.entity.Dish;
+import com.liu.reggie.entity.Setmeal;
+import com.liu.reggie.entity.SetmealDish;
+import com.liu.reggie.service.CategoryService;
+import com.liu.reggie.service.DishService;
+import com.liu.reggie.service.SetmealDishService;
+import com.liu.reggie.service.SetmealService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.redis.core.ReactiveRedisOperations;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+/**
+ * 套餐管理
+ */
 
 
+@Slf4j
+@RestController
+@RequestMapping("/setmeal")
+public class SetmealController {
+
+    @Autowired
+    private DishServiceImpl dishService;
+
+    @Autowired
+    private SetmealServiceImpl setmealService;
+
+    @Autowired
+    private SetmealDishServiceImpl setmealDishService;
+
+    @Autowired
+    private CategoryServiceImpl categoryService;
+
+    /**
+     * 新增
+     * @CacheEvict:删除缓存功能，allEntries = true表示删除该value类型的所有缓存
+     * @param setmealDto
+     * @return
+     */
+    @CacheEvict(value = "setmealCache",allEntries = true)
+    @PostMapping
+    public Result<String> save(@RequestBody SetmealDto setmealDto){
+
+        setmealService.saveWithDish(setmealDto);
+
+        log.info("套餐新增成功");
+
+        return Result.success("新创套餐成功");
+    }
+
+     /**
+     * 修改
+     * @CacheEvict:删除缓存功能，allEntries = true表示删除该value类型的所有缓存
+     * @param setmealDto
+     * @return
+     */
+    @PutMapping
+    @CacheEvict(value = "setmealCache",allEntries = true)
+    public Result<String> update(@RequestBody SetmealDto setmealDto){
+
+        setmealService.updateById(setmealDto);
+
+        return Result.success("修改成功");
+    }
+    
+    /**
+     * 删除
+     * @CacheEvict:删除缓存功能，allEntries = true表示删除该value类型的所有缓存
+     * @param ids
+     * @return
+     */
+    @CacheEvict(value = "setmealCache",allEntries = true)
+    @DeleteMapping
+    public Result<String> delete(@RequestParam List<Long> ids){
+
+        setmealService.removeWithDish(ids);
+
+        return Result.success("删除成功");
+    }
+}
+```
+# 项目部署阶段
+## 数据库读写分离
+数据库的读写分离操作相对而言比较简单，但前置的mysql主从复制相对比较繁琐  
+## 主从复制
+我们先来介绍主从复制的具体流程：  
+1.主库从库设置固定ID，并且给主库设置日志打开  
+```
+# 进入配置文件
+vim /etc/my.cnf
+
+# 主库设置
+[mysqld]
+log-bin=mysql-bin # 启动二进制日志
+server-id=128 # 设置服务器唯一ID
+
+# 从库设置
+server-id=129 # 设置服务器唯一ID
+
+# 记得刷新数据库服务
+systemctl restart mysqld
+```
+2.主库创建用户并记录日志当前状况
+```
+# 登录数据库
+mysql -uroot -p123456
+
+# 执行下列语句（生成一个用户，使其具有查询日志的权力）
+GRANT REPLICATION SLAVE ON *.* to 'xiaoming'@'%' identified by 'Root@123456';
+
+# 执行语句,你将会看到File和Position信息，该页面不要改变
+# (你将会看到日志相关信息，接下来不要对数据库操作，因为操作会导致日志信息改变)
+show master status;
+```
+3.从库使用用户连接主库并记录日志信息，实现slave同步
+```
+# 执行下列语句（使用该用户查询日志，注意内容是需要修改的）
+# master_host主库IP，master_user主库用户，master_password主库用户密码，master_log_file，master_log_pos为日志信息
+change master to
+master_host='192.168.44.128',master_user='xiaoming',master_password='Root@123456',master_log_file='mysql-bin.000001',master_log_pos=439;
+
+# 输入后执行以下语句开启slave
+start slave;
+
+# 如果显示slave冲突（如果你之前执行过slave），使用下列方法结束之前slave
+stop slave;
+```
+4.从库查看主从复制是否成功
+```
+# 查看语句
+show slave starts\G;
+
+# 我们只需要关注三个点：（为下述即为成功）
+Slave_IO_State: Waiting for master to send event
+Slave_IO_Running: Yes
+Slave_SQL_Running: Yes
+```
+## 读写分离
+我们再来介绍读写分离的具体流程：  
+
+1.导入Sharding-JDBC的maven坐标
+```
+        <!--Sharding-jdbc坐标-->
+        <dependency>
+            <groupId>org.apache.shardingsphere</groupId>
+            <artifactId>sharding-jdbc-spring-boot-starter</artifactId>
+            <version>4.0.0-RC1</version>
+        </dependency>
+```
+2.在配置文件中书写读写分离原则和Bean定义覆盖原则
+```
+server:
+  port: 8080
+spring:
+  #应用的名称，可选
+  application:
+    name: reggie_take_out
+  shardingsphere:
+    datasource:
+      names:
+        master,slave
+      #主数据源
+      master:
+        type: com.alibaba.druid.pool.DruidDataSource
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        url: jdbc:mysql://192.168.150.130:3306/reggie?characterEncoding=utf-8
+        username: root
+        password: root
+      #从数据源
+      slave:
+        type: com.alibaba.druid.pool.DruidDataSource
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        url: jdbc:mysql://192.168.150.131:3306/reggie?characterEncoding=utf-8
+        username: root
+        password: root
+    masterslave:
+      #读写分离配置
+      load-balance-algorithm-type: round_robin #轮询
+      #最终的数据源名称
+      name: dataSource
+      #主库数据源名称
+      master-data-source-name: master
+      #从库数据源列表，多个逗号分割
+      slave-data-source-names: slave
+    props:
+      sql:
+        show: true #开启sql显示
+  main:
+    allow-bean-definition-overriding: true
+  #  datasource:
+#    druid:
+#      driver-class-name: com.mysql.cj.jdbc.Driver
+#      url: jdbc:mysql://localhost:3306/reggie?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true
+#      username: root
+#      password: 1305174214
+  redis:
+    host: 127.0.0.1
+    port: 6379
+    database: 0
+    password: 1305174214
+  cache:
+    redis:
+      time-to-live: 1800000 #设置过期时间
+mybatis-plus:
+  configuration:
+    #在映射实体或者属性时，将数据库中表名和字段名中的下划线去掉，按照驼峰命名法映射
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID
+reggie:
+  path: D:\Desktop\Reggie\
+```
+## 前后端项目部署
+我们的实际部署通常分为两台服务器，来完成前后端分开部署  
+## 前端项目部署
+我们首先来完成前端项目的部署：  
+
+1.在服务器中安装Nginx，并将课程中的dist目录（已打包的前端数据）上传至Nginx下的html页面  
+2.修改Nginx配置文件nginx.conf  
+## 后端项目部署
+我们再来完成后端项目的部署：  
+1.使用git clone命令将git远程仓库的代码克隆下来
+2.将资料中的reggieStart.sh文件上传到服务器B中，通过chmod命令设置权限  
+3.然后我们直接执行sh文件即可，后端项目开启  
+# 结束语
+到这里我们的第一个项目就彻底完成了，以上就是《瑞吉外卖》所有技术点的总结内容，希望能为你带来帮助！
 
 
