@@ -12,7 +12,7 @@
 ![Image text](https://github.com/2023-orange/reggie_take_out/blob/master/%E6%95%B0%E6%8D%AE%E5%BA%93%E7%BB%93%E6%9E%84.png)
 ![Image text](https://github.com/2023-orange/reggie_take_out/blob/master/%E6%95%B0%E6%8D%AE%E5%BA%93%E7%BB%93%E6%9E%84%EF%BC%883%EF%BC%89.png)
 此外，我们采用Redis数据库来进行缓存优化阶段，用于存储页面信息以及菜品信息。
-## 后台代码开发
+# 后台代码开发
 在项目开始前，我们都需要设置映射地址，让前端页面展示直接进行页面展示而不是映射在服务层方法上：
 ```@Configuration
 @Slf4j
@@ -704,4 +704,693 @@ public class CommonController {
 ## 简单功能开发
 我们的项目中大多都是简单功能(单表)，可以直接根据MyBatisPlus提供的基本方法完成，我们在这里介绍简单模板：  
 1.在项目中查看该方法的请求信息  
+![Image text](https://github.com/2023-orange/reggie_take_out/blob/master/%E8%AF%B7%E6%B1%82%E4%BF%A1%E6%81%AF%EF%BC%88%E7%AE%80%E5%8D%95%EF%BC%89.png)
+2.在项目中查看该方法的请求数据
+![Image text](https://github.com/2023-orange/reggie_take_out/blob/master/%E8%AF%B7%E6%B1%82%E6%95%B0%E6%8D%AE%EF%BC%88%E7%AE%80%E5%8D%95%EF%BC%89.png)
+3.实现实体类
+```
+package com.itheima.reggie.domain;
+
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import java.io.Serializable;
+import java.time.LocalDateTime;
+
+/**
+ * 分类
+ */
+@Data
+public class Category implements Serializable {
+
+    private static final long serialVersionUID = 1L;
+
+    private Long id;
+
+    //类型 1 菜品分类 2 套餐分类
+    private Integer type;
+
+
+    //分类名称
+    private String name;
+
+
+    //顺序
+    private Integer sort;
+
+
+    //创建时间
+    @TableField(fill = FieldFill.INSERT)
+    private LocalDateTime createTime;
+
+
+    //更新时间
+    @TableField(fill = FieldFill.INSERT_UPDATE)
+    private LocalDateTime updateTime;
+
+
+    //创建人
+    @TableField(fill = FieldFill.INSERT)
+    private Long createUser;
+
+
+    //修改人
+    @TableField(fill = FieldFill.INSERT_UPDATE)
+    private Long updateUser;
+
+}
+```
+4.实现业务层接口
+```
+package com.itheima.reggie.service;
+
+import com.baomidou.mybatisplus.extension.service.IService;
+import com.itheima.reggie.entity.Category;
+
+public interface CategoryService extends IService<Category> {
+}
+
+```
+5.实现业务层
+```
+package com.itheima.reggie.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.itheima.reggie.common.CustomException;
+import com.itheima.reggie.entity.Category;
+import com.itheima.reggie.entity.Dish;
+import com.itheima.reggie.entity.Setmeal;
+import com.itheima.reggie.mapper.CategoryMapper;
+import com.itheima.reggie.service.CategoryService;
+import com.itheima.reggie.service.DishService;
+import com.itheima.reggie.service.SetmealService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+@Service
+public class CategoryServiceImpl extends ServiceImpl<CategoryMapper,Category> implements CategoryService{
+
+}
+```
+6.实现服务层
+```
+package com.qiuluo.reggie.controller;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.qiuluo.reggie.common.Result;
+import com.qiuluo.reggie.domain.Category;
+import com.qiuluo.reggie.service.impl.CategoryServiceImpl;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
+
+import javax.servlet.http.HttpServletRequest;
+import java.util.List;
+
+@Slf4j
+@RestController
+@RequestMapping("/category")
+public class CategoryController {
+
+    @Autowired
+    private CategoryServiceImpl categoryService;
+
+    @PostMapping
+    public Result<String> save(@RequestBody Category category){
+        categoryService.save(category);
+        return Result.success("新增成功");
+    }
+
+}
+```
+## 复杂功能开发
+有时候我们的MyBatisPlus提供的简单方法不足以满足我们的需求，这时我们就需要采用MyBatis的原始方法来定义方法完成功能开发  
+例如我们的需求中需要进行部分判断或操作两个数据表，我们需要创建新方法来完成新功能的开发：  
+1.在项目中查看该方法的请求信息
+![Image text](https://github.com/2023-orange/reggie_take_out/blob/master/%E8%AF%B7%E6%B1%82%E4%BF%A1%E6%81%AF%EF%BC%88%E5%A4%8D%E6%9D%82%EF%BC%89.png)
+2.在项目中查看该方法的请求数据
+![Image text](https://github.com/2023-orange/reggie_take_out/blob/master/%E8%AF%B7%E6%B1%82%E6%95%B0%E6%8D%AE%EF%BC%88%E5%A4%8D%E6%9D%82%EF%BC%89.png)
+3.在业务层接口定义方法
+```
+package com.itheima.reggie.service;
+
+import com.baomidou.mybatisplus.extension.service.IService;
+import com.itheima.reggie.entity.Category;
+
+public interface CategoryService extends IService<Category> {
+
+    public void remove(Long id);
+
+}
+```
+4.在业务层实现方法
+```
+package com.itheima.reggie.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.itheima.reggie.common.CustomException;
+import com.itheima.reggie.entity.Category;
+import com.itheima.reggie.entity.Dish;
+import com.itheima.reggie.entity.Setmeal;
+import com.itheima.reggie.mapper.CategoryMapper;
+import com.itheima.reggie.service.CategoryService;
+import com.itheima.reggie.service.DishService;
+import com.itheima.reggie.service.SetmealService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+@Service
+public class CategoryServiceImpl extends ServiceImpl<CategoryMapper,Category> implements CategoryService{
+
+    @Autowired
+    private DishService dishService;
+
+    @Autowired
+    private SetmealService setmealService;
+
+    /**
+     * 根据id删除分类，删除之前需要进行判断
+     * @param id
+     */
+    @Override
+    public void remove(Long id) {
+        LambdaQueryWrapper<Dish> dishLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        //添加查询条件，根据分类id进行查询
+        dishLambdaQueryWrapper.eq(Dish::getCategoryId,id);
+        int count1 = dishService.count(dishLambdaQueryWrapper);
+
+        //查询当前分类是否关联了菜品，如果已经关联，抛出一个业务异常
+        if(count1 > 0){
+            //已经关联菜品，抛出一个业务异常
+            throw new CustomException("当前分类下关联了菜品，不能删除");
+        }
+
+        //查询当前分类是否关联了套餐，如果已经关联，抛出一个业务异常
+        LambdaQueryWrapper<Setmeal> setmealLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        //添加查询条件，根据分类id进行查询
+        setmealLambdaQueryWrapper.eq(Setmeal::getCategoryId,id);
+        int count2 = setmealService.count();
+        if(count2 > 0){
+            //已经关联套餐，抛出一个业务异常
+            throw new CustomException("当前分类下关联了套餐，不能删除");
+        }
+
+        //正常删除分类
+        super.removeById(id);
+    }
+}
+```
+5.在服务层使用方法
+```
+package com.itheima.reggie.controller;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.itheima.reggie.common.R;
+import com.itheima.reggie.entity.Category;
+import com.itheima.reggie.service.CategoryService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+/**
+ * 分类管理
+ */
+@RestController
+@RequestMapping("/category")
+@Slf4j
+public class CategoryController {
+    @Autowired
+    private CategoryService categoryService;
+    /**
+     * 根据id删除分类
+     * @param id
+     * @return
+     */
+    @DeleteMapping
+    public R<String> delete(Long id){
+        log.info("删除分类，id为：{}",id);
+
+        //categoryService.removeById(id);
+        categoryService.remove(id);
+
+        return R.success("分类信息删除成功");
+    }
+}
+```
+## DTO的使用
+我们在实际开发中，其操作可能会同时兼顾两张数据表，这时我们就需要采用DTO并且采用复杂功能开发来重新定义方法  
+首先我们先来讲解DTO的具体使用：  
+1.首先我们需要一张数据表的实体类
+```
+package com.itheima.reggie.entity;
+
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import lombok.Data;
+import java.io.Serializable;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+/**
+ 菜品
+ */
+@Data
+public class Dish implements Serializable {
+
+    private static final long serialVersionUID = 1L;
+
+    private Long id;
+
+
+    //菜品名称
+    private String name;
+
+
+    //菜品分类id
+    private Long categoryId;
+
+
+    //菜品价格
+    private BigDecimal price;
+
+
+    //商品码
+    private String code;
+
+
+    //图片
+    private String image;
+
+
+    //描述信息
+    private String description;
+
+
+    //0 停售 1 起售
+    private Integer status;
+
+
+    //顺序
+    private Integer sort;
+
+
+    @TableField(fill = FieldFill.INSERT)
+    private LocalDateTime createTime;
+
+
+    @TableField(fill = FieldFill.INSERT_UPDATE)
+    private LocalDateTime updateTime;
+
+
+    @TableField(fill = FieldFill.INSERT)
+    private Long createUser;
+
+
+    @TableField(fill = FieldFill.INSERT_UPDATE)
+    private Long updateUser;
+
+}
+```
+2.我们根据实际需求，在实体类的基础上，添加一些其他属性  
+```
+package com.itheima.reggie.dto;
+
+import com.itheima.reggie.entity.Dish;
+import com.itheima.reggie.entity.DishFlavor;
+import lombok.Data;
+import java.util.ArrayList;
+import java.util.List;
+
+
+// 在Dish的基础上添加了DishFlavor数据表，以及categoryName所属分类名
+
+@Data
+public class DishDto extends Dish {
+
+    //菜品对应的口味数据
+    private List<DishFlavor> flavors = new ArrayList<>();
+
+    private String categoryName;
+
+    private Integer copies;
+}
+```
+3.然后我们在业务层使用时，就可以引入DTO类作为参数，对内部数据进行操作
+```
+package com.itheima.reggie.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.itheima.reggie.dto.DishDto;
+import com.itheima.reggie.entity.Dish;
+import com.itheima.reggie.entity.DishFlavor;
+import com.itheima.reggie.mapper.DishMapper;
+import com.itheima.reggie.service.DishFlavorService;
+import com.itheima.reggie.service.DishService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+@Slf4j
+public class DishServiceImpl extends ServiceImpl<DishMapper,Dish> implements DishService {
+
+    @Autowired
+    private DishFlavorService dishFlavorService;
+
+    /**
+     * 新增菜品，同时保存对应的口味数据
+     * @param dishDto
+     */
+    @Transactional
+    public void saveWithFlavor(DishDto dishDto) {
+        //保存菜品的基本信息到菜品表dish
+        this.save(dishDto);
+
+        Long dishId = dishDto.getId();//菜品id
+
+        //菜品口味
+        List<DishFlavor> flavors = dishDto.getFlavors();
+        flavors = flavors.stream().map((item) -> {
+            item.setDishId(dishId);
+            return item;
+        }).collect(Collectors.toList());
+
+        //保存菜品口味数据到菜品口味表dish_flavor
+        dishFlavorService.saveBatch(flavors);
+
+    }
+
+    /**
+     * 根据id查询菜品信息和对应的口味信息
+     * @param id
+     * @return
+     */
+    public DishDto getByIdWithFlavor(Long id) {
+        //查询菜品基本信息，从dish表查询
+        Dish dish = this.getById(id);
+
+        DishDto dishDto = new DishDto();
+        BeanUtils.copyProperties(dish,dishDto);
+
+        //查询当前菜品对应的口味信息，从dish_flavor表查询
+        LambdaQueryWrapper<DishFlavor> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(DishFlavor::getDishId,dish.getId());
+        List<DishFlavor> flavors = dishFlavorService.list(queryWrapper);
+        dishDto.setFlavors(flavors);
+
+        return dishDto;
+    }
+
+    @Override
+    @Transactional
+    public void updateWithFlavor(DishDto dishDto) {
+        //更新dish表基本信息
+        this.updateById(dishDto);
+
+        //清理当前菜品对应口味数据---dish_flavor表的delete操作
+        LambdaQueryWrapper<DishFlavor> queryWrapper = new LambdaQueryWrapper();
+        queryWrapper.eq(DishFlavor::getDishId,dishDto.getId());
+
+        dishFlavorService.remove(queryWrapper);
+
+        //添加当前提交过来的口味数据---dish_flavor表的insert操作
+        List<DishFlavor> flavors = dishDto.getFlavors();
+
+        flavors = flavors.stream().map((item) -> {
+            item.setDishId(dishDto.getId());
+            return item;
+        }).collect(Collectors.toList());
+
+        dishFlavorService.saveBatch(flavors);
+    }
+}
+```
+# 用户端代码开发
+## 短信发送技术
+我们的短信发送技术的原理其实很简单：  
+
+-自定义生成验证码并暂时保存  
+-将验证码通过短信服务发给用户手机  
+-用户收到后填写进行比对判断是否登陆成功  
+其实黑马这里用的是短信业务，但咱也没那条件，所以我只能自己换成QQ邮箱验证码了，这个简单，具体操作我们也只需要开启POP3/STMP服务，获取一个16位的授权码  
+为了方便用户登录，移动端通常都会提供通过手机验证码登录的功能(咱平替成邮箱验证码)  
+手机（邮箱）验证码登录的优点：  
+
+-方便快捷，无需注册，直接登录  
+-使用短信验证码作为登录凭证，无需记忆密码  
+-安全  
+-登录流程:  
+
+输入手机号（邮箱） > 获取验证码 > 输入验证码 > 点击登录 > 登录成功  
+在开发业务功能之前，我们先将要用到的类和接口的基本结构都创建好  
+-实体类User  
+-Mapper接口UserMapper  
+-业务层接口UserService  
+-业务层实现类UserServiceImpl  
+-控制层UserController  
+## 短信发送实现
+最后我们再来介绍整个短信发送流程：  
+
+1.制作工具类生成四位随机数  
+```
+package com.itheima.reggie.utils;
+
+import java.util.Random;
+
+/**
+ * 随机生成验证码工具类
+ */
+public class ValidateCodeUtils {
+    /**
+     * 随机生成验证码
+     * @param length 长度为4位或者6位
+     * @return
+     */
+    public static Integer generateValidateCode(int length){
+        Integer code =null;
+        if(length == 4){
+            code = new Random().nextInt(9999);//生成随机数，最大为9999
+            if(code < 1000){
+                code = code + 1000;//保证随机数为4位数字
+            }
+        }else if(length == 6){
+            code = new Random().nextInt(999999);//生成随机数，最大为999999
+            if(code < 100000){
+                code = code + 100000;//保证随机数为6位数字
+            }
+        }else{
+            throw new RuntimeException("只能生成4位或6位数字验证码");
+        }
+        return code;
+    }
+
+    /**
+     * 随机生成指定长度字符串验证码
+     * @param length 长度
+     * @return
+     */
+    public static String generateValidateCode4String(int length){
+        Random rdm = new Random();
+        String hash1 = Integer.toHexString(rdm.nextInt());
+        String capstr = hash1.substring(0, length);
+        return capstr;
+    }
+}
+```
+2.实现用户发送短信功能
+```
+package com.itheima.reggie.controller;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.itheima.reggie.common.R;
+import com.itheima.reggie.entity.User;
+import com.itheima.reggie.service.UserService;
+import com.itheima.reggie.utils.SMSUtils;
+import com.itheima.reggie.utils.ValidateCodeUtils;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import javax.servlet.http.HttpSession;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/user")
+@Slf4j
+public class UserController {
+
+    @Autowired
+    private UserService userService;
+
+    /**
+     * 发送手机短信验证码
+     * @param user
+     * @return
+     */
+    @PostMapping("/sendMsg")
+    public R<String> sendMsg(@RequestBody User user, HttpSession session){
+        //获取手机号
+        String phone = user.getPhone();
+
+        if(StringUtils.isNotEmpty(phone)){
+            //生成随机的4位验证码
+            String code = ValidateCodeUtils.generateValidateCode(4).toString();
+            log.info("code={}",code);
+
+            //调用阿里云提供的短信服务API完成发送短信
+            //SMSUtils.sendMessage("瑞吉外卖","",phone,code);
+
+            //需要将生成的验证码保存到Session
+            session.setAttribute(phone,code);
+
+            return R.success("手机验证码短信发送成功");
+        }
+
+        return R.error("短信发送失败");
+    }
+}
+```
+3.完成比对验证码用户登录功能
+```
+package com.itheima.reggie.controller;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.itheima.reggie.common.R;
+import com.itheima.reggie.entity.User;
+import com.itheima.reggie.service.UserService;
+import com.itheima.reggie.utils.SMSUtils;
+import com.itheima.reggie.utils.ValidateCodeUtils;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import javax.servlet.http.HttpSession;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/user")
+@Slf4j
+public class UserController {
+
+    @Autowired
+    private UserService userService;
+
+    /**
+     * 移动端用户登录
+     * @param map
+     * @param session
+     * @return
+     */
+    @PostMapping("/login")
+    public R<User> login(@RequestBody Map map, HttpSession session){
+        log.info(map.toString());
+
+        //获取手机号
+        String phone = map.get("phone").toString();
+
+        //获取验证码
+        String code = map.get("code").toString();
+
+        //从Session中获取保存的验证码
+        Object codeInSession = session.getAttribute(phone);
+
+        //进行验证码的比对（页面提交的验证码和Session中保存的验证码比对）
+        if(codeInSession != null && codeInSession.equals(code)){
+            //如果能够比对成功，说明登录成功
+
+            LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
+            queryWrapper.eq(User::getPhone,phone);
+
+            User user = userService.getOne(queryWrapper);
+            if(user == null){
+                //判断当前手机号对应的用户是否为新用户，如果是新用户就自动完成注册
+                user = new User();
+                user.setPhone(phone);
+                user.setStatus(1);
+                userService.save(user);
+            }
+            session.setAttribute("user",user.getId());
+            return R.success(user);
+        }
+        return R.error("登录失败");
+    }
+
+}
+```
+## Redis缓存技术
+我们在菜品选择界面会发现有很多套餐分类菜品数据，如果访问人数过多，数据库访问次数过多会导致系统崩毁  
+所以我们希望将相关重要的数据进行缓存，同时为了保证前台后台数据一致的前提下，我们采用Redis来实现缓存技术  
+## Redis环境搭建
+首先我们来回顾Redis基础环境搭建：  
+1.导入Redis相关依赖坐标
+```
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+```
+2.配置Redis相关信息  
+server:
+  port: 8080
+  
+# redis设置在spring下
+```
+spring:
+  application:
+    name: qiuluo
+  datasource:
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://localhost:3306/reggie
+      username: root
+      password: 123456
+  redis:
+    host: localhost
+    port: 6379
+    password: 123456
+    database: 0
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: ASSIGN_ID
+reggie:
+  path: D:\img\
+```
+
+
+
+
+
 
